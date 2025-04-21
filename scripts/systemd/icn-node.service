@@ -1,0 +1,26 @@
+[Unit]
+Description=ICN Node Service
+After=network.target
+Documentation=https://github.com/your-org/icn-dev-node
+
+[Service]
+Type=forking
+User=%i
+Group=%i
+WorkingDirectory=/home/%i/icn-dev-node
+ExecStart=/home/%i/icn-dev-node/scripts/daemon.sh start
+ExecStop=/home/%i/icn-dev-node/scripts/daemon.sh stop
+Restart=on-failure
+RestartSec=30
+PIDFile=/home/%i/.icn/node.pid
+LimitNOFILE=65536
+StandardOutput=append:/home/%i/.icn/logs/service.log
+StandardError=append:/home/%i/.icn/logs/service.log
+
+# Security options
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 

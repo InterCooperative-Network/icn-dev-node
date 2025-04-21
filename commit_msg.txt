@@ -1,0 +1,7 @@
+
+- Identity creation via generate-identity.sh
+- Proposal/vote trace via replay-dag.sh
+- Coop bootstrap + scoped vote flow via simulate-coop.sh
+- CoVM Git tracking and safe commit system
+- Updated install.sh, README, and .gitignore
+- All scripts idempotent and flag-safe

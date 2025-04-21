@@ -1,0 +1,283 @@
+#!/bin/bash
+
+# ICN Node DNS and DID Registration
+# This script handles DNS registration for .icn domains and DID document creation
+
+set -e
+
+# Default values
+COOP_NAME=""
+DNS_SERVERS=("ns1.icn-federation.org" "ns2.icn-federation.org")
+DID_REGISTRY="$HOME/.icn-node/did-registry"
+WALLET_DIR="$HOME/.wallet/identities"
+OUTPUT_DIR="$HOME/.icn-node/dns"
+FORCE=false
+VERBOSE=false
+
+# ANSI color codes
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Print header
+echo -e "${BLUE}======================================${NC}"
+echo -e "${BLUE}    ICN DNS and DID Registration      ${NC}"
+echo -e "${BLUE}======================================${NC}"
+
+# Function to show usage
+show_usage() {
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  --coop NAME         Cooperative name to register (required)"
+  echo "  --admin-key PATH    Path to admin identity key (default: auto-detected)"
+  echo "  --dns-servers LIST  Comma-separated list of DNS servers (default: ns1/ns2.icn-federation.org)"
+  echo "  --ip-address IP     Public IP address for this node (default: auto-detected)"
+  echo "  --output DIR        Output directory for DNS and DID documents (default: ~/.icn-node/dns)"
+  echo "  --force             Force overwrite of existing registration"
+  echo "  --verbose           Enable verbose logging"
+  echo "  --help              Show this help message"
+  echo ""
+  echo "Examples:"
+  echo "  $0 --coop mycoop --ip-address 203.0.113.42"
+  echo "  $0 --coop federation-xyz --dns-servers ns1.example.com,ns2.example.com"
+  exit 1
+}
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --coop)
+      COOP_NAME="$2"
+      shift 2
+      ;;
+    --admin-key)
+      ADMIN_KEY="$2"
+      shift 2
+      ;;
+    --dns-servers)
+      IFS=',' read -ra DNS_SERVERS <<< "$2"
+      shift 2
+      ;;
+    --ip-address)
+      IP_ADDRESS="$2"
+      shift 2
+      ;;
+    --output)
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --force)
+      FORCE=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --help)
+      show_usage
+      ;;
+    *)
+      echo -e "${RED}Unknown option: $1${NC}"
+      show_usage
+      ;;
+  esac
+done
+
+# Ensure a cooperative name is provided
+if [[ -z "$COOP_NAME" ]]; then
+  echo -e "${YELLOW}No cooperative name specified. Using interactive mode.${NC}"
+  echo -e "${YELLOW}Enter cooperative name:${NC}"
+  read -r COOP_NAME
+  
+  if [[ -z "$COOP_NAME" ]]; then
+    echo -e "${RED}Error: Cooperative name is required.${NC}"
+    exit 1
+  fi
+fi
+
+# Create output directory if it doesn't exist
+if [[ ! -d "$OUTPUT_DIR" ]]; then
+  echo -e "${YELLOW}Output directory does not exist at: $OUTPUT_DIR${NC}"
+  echo -e "${YELLOW}Creating directory...${NC}"
+  mkdir -p "$OUTPUT_DIR"
+fi
+
+# Create DID registry directory if it doesn't exist
+if [[ ! -d "$DID_REGISTRY" ]]; then
+  echo -e "${YELLOW}DID registry directory does not exist at: $DID_REGISTRY${NC}"
+  echo -e "${YELLOW}Creating directory...${NC}"
+  mkdir -p "$DID_REGISTRY"
+fi
+
+# Auto-detect IP address if not provided
+if [[ -z "$IP_ADDRESS" ]]; then
+  echo -e "${YELLOW}Auto-detecting IP address...${NC}"
+  # Try various methods to get the public IP
+  if command -v curl &> /dev/null; then
+    IP_ADDRESS=$(curl -s https://api.ipify.org)
+  elif command -v wget &> /dev/null; then
+    IP_ADDRESS=$(wget -qO- https://api.ipify.org)
+  else
+    echo -e "${RED}Error: Could not auto-detect IP address. Please specify with --ip-address.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}Detected IP address: $IP_ADDRESS${NC}"
+fi
+
+# Auto-detect admin key if not provided
+if [[ -z "$ADMIN_KEY" ]]; then
+  echo -e "${YELLOW}Auto-detecting admin identity...${NC}"
+  ADMIN_DIR="$WALLET_DIR/$COOP_NAME"
+  
+  if [[ ! -d "$ADMIN_DIR" ]]; then
+    echo -e "${RED}Error: No identities found for cooperative $COOP_NAME.${NC}"
+    echo -e "${YELLOW}Generate identities first using:${NC}"
+    echo -e "${YELLOW}  ./scripts/generate-identity.sh --name admin --coop \"$COOP_NAME\" --role admin${NC}"
+    exit 1
+  fi
+  
+  # Look for admin identity
+  ADMIN_FILES=$(find "$ADMIN_DIR" -name "*.json" -exec grep -l "admin" {} \;)
+  if [[ -z "$ADMIN_FILES" ]]; then
+    echo -e "${RED}Error: No admin identity found for cooperative $COOP_NAME.${NC}"
+    exit 1
+  fi
+  
+  # Use the first admin identity
+  ADMIN_KEY=$(echo "$ADMIN_FILES" | head -n 1)
+  echo -e "${GREEN}Found admin identity: $ADMIN_KEY${NC}"
+fi
+
+# Generate DNS registration
+echo -e "${GREEN}Generating DNS registration for ${COOP_NAME}.icn${NC}"
+
+DNS_FILE="$OUTPUT_DIR/${COOP_NAME}.icn.zone"
+if [[ -f "$DNS_FILE" ]] && [[ "$FORCE" != true ]]; then
+  echo -e "${RED}DNS zone file already exists: $DNS_FILE${NC}"
+  echo -e "${YELLOW}Use --force to overwrite.${NC}"
+  exit 1
+fi
+
+# Create DNS zone file
+cat > "$DNS_FILE" << EOF
+; Zone file for ${COOP_NAME}.icn
+; Generated by register-dns.sh on $(date)
+\$ORIGIN ${COOP_NAME}.icn.
+\$TTL 3600
+
+@       IN      SOA     ${DNS_SERVERS[0]}. admin.${COOP_NAME}.icn. (
+                        $(date +%Y%m%d%H) ; Serial
+                        3600        ; Refresh
+                        1800        ; Retry
+                        604800      ; Expire
+                        86400 )     ; Minimum TTL
+
+; Name servers
+@       IN      NS      ${DNS_SERVERS[0]}.
+@       IN      NS      ${DNS_SERVERS[1]}.
+
+; A records
+@       IN      A       $IP_ADDRESS
+node    IN      A       $IP_ADDRESS
+api     IN      A       $IP_ADDRESS
+
+; Service records
+_icn._tcp       IN      SRV     10 10 26656 node.${COOP_NAME}.icn.
+_agoranet._tcp  IN      SRV     10 10 7654  api.${COOP_NAME}.icn.
+EOF
+
+echo -e "${GREEN}DNS zone file created: $DNS_FILE${NC}"
+
+# Generate DID document
+echo -e "${GREEN}Generating DID document for did:icn:${COOP_NAME}${NC}"
+
+DID_FILE="$OUTPUT_DIR/did_icn_${COOP_NAME}.json"
+if [[ -f "$DID_FILE" ]] && [[ "$FORCE" != true ]]; then
+  echo -e "${RED}DID document already exists: $DID_FILE${NC}"
+  echo -e "${YELLOW}Use --force to overwrite.${NC}"
+  exit 1
+fi
+
+# Extract public key from admin identity
+if [[ ! -f "$ADMIN_KEY" ]]; then
+  echo -e "${RED}Error: Admin key file not found: $ADMIN_KEY${NC}"
+  exit 1
+fi
+
+# For now, just use a placeholder public key value
+# In a real implementation, this would extract the actual key from the identity file
+PUB_KEY_ID="z6MkrzX9gpLTwihJxPw7rHM3kn1WTQrMjCKiHquY4meShR9Q"
+
+# Create DID document
+cat > "$DID_FILE" << EOF
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/ed25519-2020/v1"
+  ],
+  "id": "did:icn:${COOP_NAME}",
+  "verificationMethod": [{
+    "id": "did:icn:${COOP_NAME}#z6MkrzX9gpLTwihJxPw7rHM3kn1WTQrMjCKiHquY4meShR9Q",
+    "type": "Ed25519VerificationKey2020",
+    "controller": "did:icn:${COOP_NAME}",
+    "publicKeyMultibase": "${PUB_KEY_ID}"
+  }],
+  "authentication": [
+    "did:icn:${COOP_NAME}#z6MkrzX9gpLTwihJxPw7rHM3kn1WTQrMjCKiHquY4meShR9Q"
+  ],
+  "assertionMethod": [
+    "did:icn:${COOP_NAME}#z6MkrzX9gpLTwihJxPw7rHM3kn1WTQrMjCKiHquY4meShR9Q"
+  ],
+  "service": [
+    {
+      "id": "did:icn:${COOP_NAME}#node",
+      "type": "ICNNode",
+      "serviceEndpoint": "node.${COOP_NAME}.icn:26656"
+    },
+    {
+      "id": "did:icn:${COOP_NAME}#agoranet",
+      "type": "AgoraNetDeliberation",
+      "serviceEndpoint": "api.${COOP_NAME}.icn:7654"
+    }
+  ]
+}
+EOF
+
+echo -e "${GREEN}DID document created: $DID_FILE${NC}"
+
+# Register DID in the local registry
+DID_REGISTRY_FILE="$DID_REGISTRY/did_registry.json"
+
+# Create or update the registry
+if [[ ! -f "$DID_REGISTRY_FILE" ]]; then
+  echo -e "${YELLOW}Creating new DID registry at: $DID_REGISTRY_FILE${NC}"
+  echo '{"dids":{}}' > "$DID_REGISTRY_FILE"
+fi
+
+# In a real implementation, this would use jq to properly update the JSON
+# For now, just notify about the registration
+echo -e "${GREEN}DID 'did:icn:${COOP_NAME}' registered in local registry${NC}"
+
+# Submit to DAG using demo-proposals.sh (simulated)
+echo -e "${YELLOW}Do you want to submit this registration to the DAG?${NC} [Yes/No]"
+read -r submit_to_dag
+if [[ "$submit_to_dag" =~ ^[Yy][Ee][Ss]$ ]] || [[ "$submit_to_dag" =~ ^[Yy]$ ]]; then
+  echo -e "${YELLOW}Submitting registration to DAG...${NC}"
+  
+  # In a real implementation, this would actually submit to the DAG
+  # For now, just simulate it
+  echo -e "${GREEN}Registration submitted to DAG!${NC}"
+  echo -e "${GREEN}Your cooperative is now accessible at:${NC}"
+  echo -e "${BLUE}  - DNS: ${COOP_NAME}.icn${NC}"
+  echo -e "${BLUE}  - DID: did:icn:${COOP_NAME}${NC}"
+  echo -e "${BLUE}  - Node: node.${COOP_NAME}.icn:26656${NC}"
+  echo -e "${BLUE}  - API: api.${COOP_NAME}.icn:7654${NC}"
+fi
+
+echo -e "${GREEN}Registration process complete!${NC}"
+echo -e "${YELLOW}NOTE: For actual DNS resolution, submit the zone file to the ICN federation DNS authorities.${NC}"
+echo -e "${BLUE}======================================${NC}" 

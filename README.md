@@ -22,6 +22,24 @@ cd icn-dev-node
 ./scripts/simulate-coop.sh --coop "my-coop" --identity-count 3 --replay
 ```
 
+## 🧙 Guided Initialization
+
+For a more guided approach, use our interactive initialization script:
+
+```bash
+# Run the guided initialization tool
+./scripts/init-node.sh
+```
+
+This script will walk you through:
+- Selecting node type (Dev-Net, Cooperative, Community, Federation)
+- Configuring federation connections
+- Setting up scoped identities
+- Enabling AgoraNet deliberation tools
+- Verifying initialization success
+
+Each step includes confirmation prompts and clear explanations of what's happening.
+
 ## 🛠️ Prerequisites
 
 - **Rust** (1.60+) and Cargo
@@ -44,6 +62,9 @@ cd icn-dev-node
 │   ├── Dockerfile          # Multi-stage Dockerfile for ICN node
 │   ├── docker-compose.yml  # Compose setup with persistent storage
 │   └── entrypoint.sh       # Container entrypoint script
+├── drafts/                 # Governance proposal drafts
+│   ├── example_budget_proposal.dsl  # Example budget allocation
+│   └── example_param_change.dsl     # Example parameter change
 ├── scripts/                # Helper scripts
 │   ├── install.sh          # Dependency installation script
 │   ├── run-node.sh         # Local node runner
@@ -51,7 +72,12 @@ cd icn-dev-node
 │   ├── demo-proposals.sh   # Script for governance demos
 │   ├── generate-identity.sh # Create scoped identities
 │   ├── replay-dag.sh       # Trace and replay DAG state
-│   └── simulate-coop.sh    # Simulate a cooperative with governance
+│   ├── simulate-coop.sh    # Simulate a cooperative with governance
+│   ├── init-node.sh        # Interactive node initialization
+│   ├── run-agoranet.sh     # AgoraNet deliberation service runner
+│   └── register-dns.sh     # DNS and DID registration
+├── .cursor/                # Cursor AI integration
+│   └── prompts/            # AI-assisted workflow prompts
 └── .env.example            # Environment variable template
 ```
 
@@ -196,6 +222,63 @@ cd icn-dev-node
 ./scripts/demo-proposals.sh --no-dag
 ```
 
+### Federation Status and Diagnostics
+
+```bash
+# Check federation status with default settings
+./scripts/federation-check.sh
+
+# Check a specific node with custom peers file
+./scripts/federation-check.sh --node-url "http://mynode:26657" --peers "my-peers.toml"
+
+# Monitor federation status every minute
+./scripts/federation-check.sh --monitor 60
+
+# Output detailed results in JSON format (for automation)
+./scripts/federation-check.sh --json --verbose
+
+# Check with custom minimum peer requirement
+./scripts/federation-check.sh --min-peers 3
+```
+
+### Running AgoraNet Service
+
+```bash
+# Start AgoraNet for a specific cooperative
+./scripts/run-agoranet.sh --coop "my-cooperative"
+
+# Run as a background daemon
+./scripts/run-agoranet.sh --coop "my-cooperative" --daemon
+
+# Use a custom port
+./scripts/run-agoranet.sh --coop "my-cooperative" --port 8080
+
+# Specify a custom DAG path
+./scripts/run-agoranet.sh --coop "my-cooperative" --dag-path "/path/to/dag"
+
+# Start with API server disabled
+./scripts/run-agoranet.sh --coop "my-cooperative" --no-api
+```
+
+### DNS and DID Registration
+
+```bash
+# Register standard DNS and DID entries for a cooperative
+./scripts/register-dns.sh --coop "my-cooperative"
+
+# Specify custom DNS servers
+./scripts/register-dns.sh --coop "my-cooperative" --dns-servers ns1.example.com,ns2.example.com
+
+# Use a specific IP address
+./scripts/register-dns.sh --coop "my-cooperative" --ip-address 203.0.113.42
+
+# Force overwrite of existing registration
+./scripts/register-dns.sh --coop "my-cooperative" --force
+
+# Specify a specific admin key
+./scripts/register-dns.sh --coop "my-cooperative" --admin-key "/path/to/admin.json"
+```
+
 ### Using Docker
 
 ```bash
@@ -303,6 +386,24 @@ To set up pre-commit hooks:
 pip install pre-commit
 pre-commit install
 ```
+
+## 🧠 Using AI Assistants
+
+This repository includes pre-configured Cursor AI prompts in the `.cursor/prompts/` directory. These prompts provide guided assistance for common ICN Node operations.
+
+### Available Prompts
+
+- **Join or Contribute to the ICN Network**: Guides new users through the process of joining the ICN testnet or creating a new cooperative, community, or federation node.
+- **Create & Drive a Governance Proposal**: Walks users through drafting a governance proposal using DSL templates, submitting it to the network, casting votes, and verifying the outcome in the DAG.
+
+### Using Prompts with Cursor
+
+1. Open the repository in Cursor IDE
+2. Press `Cmd/Ctrl+Shift+L` to open the prompt selector
+3. Choose a prompt from the list
+4. Follow the interactive guidance provided by the AI
+
+The AI will help walk you through complex operations like node initialization, federation setup, identity management, and AgoraNet integration.
 
 ## 📜 License
 
