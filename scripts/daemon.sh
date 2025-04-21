@@ -23,6 +23,7 @@ ENABLE_COVM=true  # Enable CoVM execution
 COVM_WATCH_INTERVAL=60  # Check for new proposals every 60 seconds
 VERBOSE=false
 RESTART_DELAY=30
+RUST_NODE=true  # Use Rust implementation by default
 
 print_usage() {
   cat <<EOF
@@ -43,6 +44,7 @@ Options:
   --no-covm              Disable CoVM execution
   --covm-interval SEC    CoVM execution check interval in seconds (default: 60)
   --no-restart           Don't automatically restart on failure
+  --no-rust-node         Use bash scripts instead of Rust implementation
   --verbose              Enable verbose logging
   --help                 Display this help message and exit
 
@@ -103,6 +105,10 @@ parse_args() {
         ;;
       --no-restart)
         RESTART_DELAY=0
+        shift
+        ;;
+      --no-rust-node)
+        RUST_NODE=false
         shift
         ;;
       --verbose)
@@ -233,27 +239,57 @@ start_covm() {
   # Create queue directory if it doesn't exist
   mkdir -p "${DATA_DIR}/queue"
   
-  # Build the CoVM execution command
-  local covm_cmd="${SCRIPT_DIR}/exec-covm.sh"
-  covm_cmd+=" --data-dir \"${DATA_DIR}\""
-  covm_cmd+=" --watch"
-  covm_cmd+=" --watch-interval ${COVM_WATCH_INTERVAL}"
-  [[ "$VERBOSE" == true ]] && covm_cmd+=" --verbose"
-  
-  # Create a wrapper script for CoVM execution
-  local covm_wrapper="${DATA_DIR}/covm_wrapper.sh"
-  cat > "$covm_wrapper" <<EOF
+  if [[ "$RUST_NODE" == true ]]; then
+    # Use Rust-based node runner
+    log_info "Using Rust-based cooperative node runner"
+    
+    local covm_cmd="${SCRIPT_DIR}/icn-node-runner.sh"
+    covm_cmd+=" run"
+    covm_cmd+=" --data-dir \"${DATA_DIR}\""
+    covm_cmd+=" --interval ${COVM_WATCH_INTERVAL}"
+    [[ "$VERBOSE" == true ]] && covm_cmd+=" --verbose"
+    
+    # Create a wrapper script
+    local covm_wrapper="${DATA_DIR}/covm_wrapper.sh"
+    cat > "$covm_wrapper" <<EOF
 #!/bin/bash
 set -euo pipefail
 exec $covm_cmd
 EOF
-  chmod +x "$covm_wrapper"
-  
-  # Start CoVM in background
-  nohup "$covm_wrapper" > "${DATA_DIR}/logs/covm.log" 2>&1 &
-  echo $! > "$COVM_PID_FILE"
-  
-  log_info "CoVM execution started with PID $(cat "$COVM_PID_FILE")"
+    chmod +x "$covm_wrapper"
+    
+    # Start CoVM in background
+    nohup "$covm_wrapper" > "${DATA_DIR}/logs/icn-node.log" 2>&1 &
+    echo $! > "$COVM_PID_FILE"
+    
+    log_info "Rust node runner started with PID $(cat "$COVM_PID_FILE")"
+    
+  else
+    # Use bash-based script
+    log_info "Using bash-based cooperative node runner"
+    
+    # Build the CoVM execution command
+    local covm_cmd="${SCRIPT_DIR}/exec-covm.sh"
+    covm_cmd+=" --data-dir \"${DATA_DIR}\""
+    covm_cmd+=" --watch"
+    covm_cmd+=" --watch-interval ${COVM_WATCH_INTERVAL}"
+    [[ "$VERBOSE" == true ]] && covm_cmd+=" --verbose"
+    
+    # Create a wrapper script for CoVM execution
+    local covm_wrapper="${DATA_DIR}/covm_wrapper.sh"
+    cat > "$covm_wrapper" <<EOF
+#!/bin/bash
+set -euo pipefail
+exec $covm_cmd
+EOF
+    chmod +x "$covm_wrapper"
+    
+    # Start CoVM in background
+    nohup "$covm_wrapper" > "${DATA_DIR}/logs/covm.log" 2>&1 &
+    echo $! > "$COVM_PID_FILE"
+    
+    log_info "CoVM execution started with PID $(cat "$COVM_PID_FILE")"
+  fi
 }
 
 stop_node() {

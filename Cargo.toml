@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "crates/icn-cli",
+    "crates/icn-node",
+    "deps/icn-covm/crates/icn-covm",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["ICN Developer Team"]
+repository = "https://github.com/icn"
+license = "MIT" 

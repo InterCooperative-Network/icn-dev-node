@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--release] [--log-level <level>] [--node-name <name>] [--data-dir <dir>] [--config <file>] [--no-federation] [--no-storage]"
+      echo "Usage: $0 [--release] [--log-level <level>] [--node-name <n>] [--data-dir <dir>] [--config <file>] [--no-federation] [--no-storage]"
       exit 1
       ;;
   esac
@@ -59,14 +59,14 @@ fi
 check_node_binary() {
   local binary_path
   if [[ "$RELEASE_MODE" = true ]]; then
-    binary_path="../deps/icn-covm/target/release/icn-node"
+    binary_path="../target/release/icn-node"
   else
-    binary_path="../deps/icn-covm/target/debug/icn-node"
+    binary_path="../target/debug/icn-node"
   fi
 
   if [[ ! -f "$binary_path" ]]; then
     echo "❌ Node binary not found at $binary_path"
-    echo "Please run install.sh first or check that the build completed successfully."
+    echo "Please run 'cargo build' first or check that the build completed successfully."
     exit 1
   fi
 
@@ -112,7 +112,7 @@ start_node() {
     storage_flag="--storage"
   fi
   
-  echo "Starting ICN node..."
+  echo "Starting ICN node with integrated CoVM..."
   echo "  - Name: $NODE_NAME"
   echo "  - Data directory: $DATA_DIR"
   echo "  - Federation enabled: $FEDERATION_ENABLED"
