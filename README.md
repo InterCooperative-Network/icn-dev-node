@@ -12,15 +12,34 @@ cd icn-dev-node
 # Install dependencies and build ICN Node
 ./scripts/install.sh
 
-# Run a local node
+# For a fully autonomous node with all features enabled:
+./scripts/auto-node.sh --node-type testnet --coop "my-coop" --auto-register
+
+# OR run a local node manually
 ./scripts/run-node.sh
 
-# OR connect to the testnet
+# OR connect to the testnet manually
 ./scripts/join-testnet.sh
 
 # Generate identities and simulate a cooperative
 ./scripts/simulate-coop.sh --coop "my-coop" --identity-count 3 --replay
 ```
+
+## 🤖 Autonomous Node Mode
+
+For fully autonomous operation, use our daemon mode:
+
+```bash
+# Start node as a daemon with auto-join and auto-registration
+./scripts/daemon.sh --node-type testnet --auto-register
+```
+
+The daemon mode supports:
+- Auto-join testnet or livenet on startup
+- Auto-restart on failure
+- Identity and DNS/DID registration
+- Event monitoring and response
+- Headless operation with proper logging
 
 ## 🧙 Guided Initialization
 
@@ -66,16 +85,25 @@ Each step includes confirmation prompts and clear explanations of what's happeni
 │   ├── example_budget_proposal.dsl  # Example budget allocation
 │   └── example_param_change.dsl     # Example parameter change
 ├── scripts/                # Helper scripts
-│   ├── install.sh          # Dependency installation script
-│   ├── run-node.sh         # Local node runner
-│   ├── join-testnet.sh     # Testnet connection script
+│   ├── agoranet-integration.sh  # AgoraNet integration manager
+│   ├── auto-node.sh        # All-in-one autonomous node setup
+│   ├── common.sh           # Common utility functions
+│   ├── daemon.sh           # Autonomous node daemon
 │   ├── demo-proposals.sh   # Script for governance demos
+│   ├── event-listener.sh   # Event monitoring system
+│   ├── federation-check.sh # Verify federation status
 │   ├── generate-identity.sh # Create scoped identities
-│   ├── replay-dag.sh       # Trace and replay DAG state
-│   ├── simulate-coop.sh    # Simulate a cooperative with governance
 │   ├── init-node.sh        # Interactive node initialization
+│   ├── install.sh          # Dependency installation script
+│   ├── join-testnet.sh     # Testnet connection script
+│   ├── register-dns.sh     # DNS and DID registration
+│   ├── replay-dag.sh       # Trace and replay DAG state
 │   ├── run-agoranet.sh     # AgoraNet deliberation service runner
-│   └── register-dns.sh     # DNS and DID registration
+│   ├── run-node.sh         # Local node runner
+│   ├── simulate-coop.sh    # Simulate a cooperative with governance
+│   └── systemd/            # Systemd service files
+│       ├── icn-node.service     # Node service template
+│       └── install-service.sh   # Service installation script
 ├── .cursor/                # Cursor AI integration
 │   └── prompts/            # AI-assisted workflow prompts
 └── .env.example            # Environment variable template
@@ -103,6 +131,26 @@ Each step includes confirmation prompts and clear explanations of what's happeni
 
 # Install/update only a specific repository
 ./scripts/install.sh --repo icn-covm
+```
+
+### Running as a Daemon
+
+```bash
+# Start with default settings (local dev mode)
+./scripts/daemon.sh
+
+# Run as testnet node with auto-registration
+./scripts/daemon.sh --node-type testnet --auto-register
+
+# Run with custom data directory and node name
+./scripts/daemon.sh --node-type livenet --data-dir "/data/icn" --node-name "my-federation-node"
+
+# Check status and logs
+./scripts/daemon.sh status
+tail -f ~/.icn/logs/node.log
+
+# Stop the daemon
+./scripts/daemon.sh stop
 ```
 
 ### Running a Local Node
@@ -160,6 +208,38 @@ Each step includes confirmation prompts and clear explanations of what's happeni
 
 # Show verbose output
 ./scripts/generate-identity.sh --verbose
+```
+
+### Event Monitoring
+
+```bash
+# Monitor all events with default settings
+./scripts/event-listener.sh
+
+# Listen for specific event types
+./scripts/event-listener.sh --events "tm.event='Tx' AND tx.type='governance'"
+
+# Run as a daemon with custom hooks directory
+./scripts/event-listener.sh --daemon --hooks-dir "/path/to/hooks"
+
+# Monitor with auto-reconnect on failure
+./scripts/event-listener.sh --daemon --max-reconnects 0 --reconnect-delay 10
+```
+
+### AgoraNet Integration
+
+```bash
+# Start AgoraNet for a specific cooperative
+./scripts/agoranet-integration.sh --coop "my-cooperative" --start
+
+# Run as a background daemon
+./scripts/agoranet-integration.sh --coop "my-cooperative" --daemon --start
+
+# Check AgoraNet status
+./scripts/agoranet-integration.sh --status
+
+# Stop the AgoraNet service
+./scripts/agoranet-integration.sh --stop
 ```
 
 ### Exploring the DAG and Proposals
@@ -241,25 +321,6 @@ Each step includes confirmation prompts and clear explanations of what's happeni
 ./scripts/federation-check.sh --min-peers 3
 ```
 
-### Running AgoraNet Service
-
-```bash
-# Start AgoraNet for a specific cooperative
-./scripts/run-agoranet.sh --coop "my-cooperative"
-
-# Run as a background daemon
-./scripts/run-agoranet.sh --coop "my-cooperative" --daemon
-
-# Use a custom port
-./scripts/run-agoranet.sh --coop "my-cooperative" --port 8080
-
-# Specify a custom DAG path
-./scripts/run-agoranet.sh --coop "my-cooperative" --dag-path "/path/to/dag"
-
-# Start with API server disabled
-./scripts/run-agoranet.sh --coop "my-cooperative" --no-api
-```
-
 ### DNS and DID Registration
 
 ```bash
@@ -277,6 +338,24 @@ Each step includes confirmation prompts and clear explanations of what's happeni
 
 # Specify a specific admin key
 ./scripts/register-dns.sh --coop "my-cooperative" --admin-key "/path/to/admin.json"
+```
+
+### Installing as a System Service
+
+```bash
+# Install as a system service for the current user
+sudo ./scripts/systemd/install-service.sh
+
+# Install for a specific user with testnet configuration
+sudo ./scripts/systemd/install-service.sh --user alice --node-type testnet
+
+# Install with auto-registration enabled
+sudo ./scripts/systemd/install-service.sh --auto-register
+
+# After installation, manage with systemctl
+sudo systemctl start icn-node@alice
+sudo systemctl status icn-node@alice
+sudo systemctl stop icn-node@alice
 ```
 
 ### Using Docker
@@ -309,6 +388,27 @@ Important configurable options:
 - **Data directory** - Where blockchain data is stored
 - **Federation settings** - For cooperative network participation
 - **Storage settings** - For distributed storage capabilities
+- **Event hooks** - Custom scripts triggered by blockchain events
+
+## 🧬 Event-Driven Architecture
+
+The ICN node now supports an event-driven architecture for autonomous operation:
+
+1. **Event Sources**:
+   - Blockchain events (new blocks, transactions)
+   - Governance events (proposals, votes)
+   - Federation events (peer join/leave)
+   - AgoraNet events (deliberation activity)
+
+2. **Event Handlers**:
+   - Custom hook scripts in `~/.icn/hooks/`
+   - Webhook integrations for external services
+   - Automatic actions (identity registration, proposal execution)
+
+3. **Integration Points**:
+   - AgoraNet ↔ ICN node bidirectional communication
+   - Federation messaging and coordination
+   - External API endpoints for mobile/web clients
 
 ## 🔍 ICN Concepts
 
@@ -371,6 +471,12 @@ A: Make sure the ICN node binary is built and the identity directory is writable
 
 **Q: DAG replay shows no data**
 A: Ensure the node has been running for some time and has processed at least one proposal or transaction.
+
+**Q: Event listener not receiving events**
+A: Verify that the node is running and the WebSocket endpoint is accessible. Check for any firewalls blocking the connection.
+
+**Q: AgoraNet integration not working**
+A: Ensure that both the ICN node and AgoraNet are running and can communicate with each other.
 
 ## 🤝 Contributing
 
