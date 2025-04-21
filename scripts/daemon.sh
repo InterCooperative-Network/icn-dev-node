@@ -13,11 +13,14 @@ DATA_DIR="${HOME}/.icn"
 NODE_NAME="icn-node-$(hostname)"
 LOG_FILE="${DATA_DIR}/logs/node.log"
 PID_FILE="${DATA_DIR}/node.pid"
+COVM_PID_FILE="${DATA_DIR}/covm.pid"
 CONFIG_FILE=""
 BOOTSTRAP_PEERS=""
 AUTO_REGISTER=false
 FEDERATION=true
 STORAGE=true
+ENABLE_COVM=true  # Enable CoVM execution
+COVM_WATCH_INTERVAL=60  # Check for new proposals every 60 seconds
 VERBOSE=false
 RESTART_DELAY=30
 
@@ -37,6 +40,8 @@ Options:
   --auto-register        Automatically register DNS and DID
   --no-federation        Disable federation
   --no-storage           Disable storage
+  --no-covm              Disable CoVM execution
+  --covm-interval SEC    CoVM execution check interval in seconds (default: 60)
   --no-restart           Don't automatically restart on failure
   --verbose              Enable verbose logging
   --help                 Display this help message and exit
@@ -57,6 +62,7 @@ parse_args() {
         DATA_DIR="$2"
         LOG_FILE="${DATA_DIR}/logs/node.log"
         PID_FILE="${DATA_DIR}/node.pid"
+        COVM_PID_FILE="${DATA_DIR}/covm.pid"
         shift 2
         ;;
       --node-name)
@@ -86,6 +92,14 @@ parse_args() {
       --no-storage)
         STORAGE=false
         shift
+        ;;
+      --no-covm)
+        ENABLE_COVM=false
+        shift
+        ;;
+      --covm-interval)
+        COVM_WATCH_INTERVAL="$2"
+        shift 2
         ;;
       --no-restart)
         RESTART_DELAY=0
@@ -205,9 +219,48 @@ EOF
     "${SCRIPT_DIR}/register-dns.sh" --node-name "$NODE_NAME" --coop "default" || \
       log_error "Failed to register DNS and DID entries"
   fi
+  
+  # Start CoVM execution if enabled
+  if [[ "$ENABLE_COVM" == true ]]; then
+    start_covm
+  fi
+}
+
+# Start CoVM execution in watch mode
+start_covm() {
+  log_info "Starting CoVM execution in watch mode..."
+  
+  # Create queue directory if it doesn't exist
+  mkdir -p "${DATA_DIR}/queue"
+  
+  # Build the CoVM execution command
+  local covm_cmd="${SCRIPT_DIR}/exec-covm.sh"
+  covm_cmd+=" --data-dir \"${DATA_DIR}\""
+  covm_cmd+=" --watch"
+  covm_cmd+=" --watch-interval ${COVM_WATCH_INTERVAL}"
+  [[ "$VERBOSE" == true ]] && covm_cmd+=" --verbose"
+  
+  # Create a wrapper script for CoVM execution
+  local covm_wrapper="${DATA_DIR}/covm_wrapper.sh"
+  cat > "$covm_wrapper" <<EOF
+#!/bin/bash
+set -euo pipefail
+exec $covm_cmd
+EOF
+  chmod +x "$covm_wrapper"
+  
+  # Start CoVM in background
+  nohup "$covm_wrapper" > "${DATA_DIR}/logs/covm.log" 2>&1 &
+  echo $! > "$COVM_PID_FILE"
+  
+  log_info "CoVM execution started with PID $(cat "$COVM_PID_FILE")"
 }
 
 stop_node() {
+  # Stop CoVM execution first
+  stop_covm
+  
+  # Then stop the node
   if [[ -f "$PID_FILE" ]]; then
     local pid
     pid=$(cat "$PID_FILE")
@@ -234,21 +287,77 @@ stop_node() {
   fi
 }
 
+# Stop CoVM execution
+stop_covm() {
+  if [[ -f "$COVM_PID_FILE" ]]; then
+    local covm_pid
+    covm_pid=$(cat "$COVM_PID_FILE")
+    if ps -p "$covm_pid" > /dev/null; then
+      log_info "Stopping CoVM execution (PID: $covm_pid)..."
+      kill "$covm_pid"
+      # Wait for process to terminate
+      for i in {1..10}; do
+        if ! ps -p "$covm_pid" > /dev/null; then
+          break
+        fi
+        sleep 1
+      done
+      # Force kill if still running
+      if ps -p "$covm_pid" > /dev/null; then
+        log_warn "CoVM did not terminate gracefully, force killing..."
+        kill -9 "$covm_pid" || true
+      fi
+    fi
+    rm -f "$COVM_PID_FILE"
+    log_info "CoVM execution stopped"
+  else
+    log_debug "No CoVM PID file found"
+  fi
+}
+
 check_node() {
+  local node_running=false
+  local covm_running=false
+  
+  # Check node status
   if [[ -f "$PID_FILE" ]]; then
     local pid
     pid=$(cat "$PID_FILE")
     if ps -p "$pid" > /dev/null; then
       log_info "ICN node is running (PID: $pid)"
-      return 0
+      node_running=true
     else
-      log_warn "PID file exists but process is not running"
+      log_warn "Node PID file exists but process is not running"
       rm -f "$PID_FILE"
-      return 1
     fi
   else
     log_info "ICN node is not running"
-    return 1
+  fi
+  
+  # Check CoVM status if enabled
+  if [[ "$ENABLE_COVM" == true ]]; then
+    if [[ -f "$COVM_PID_FILE" ]]; then
+      local covm_pid
+      covm_pid=$(cat "$COVM_PID_FILE")
+      if ps -p "$covm_pid" > /dev/null; then
+        log_info "CoVM execution is running (PID: $covm_pid)"
+        covm_running=true
+      else
+        log_warn "CoVM PID file exists but process is not running"
+        rm -f "$COVM_PID_FILE"
+      fi
+    else
+      log_info "CoVM execution is not running"
+    fi
+  fi
+  
+  # Return success only if both are running (when CoVM is enabled)
+  if [[ "$ENABLE_COVM" == true ]]; then
+    [[ "$node_running" == true && "$covm_running" == true ]]
+    return $?
+  else
+    [[ "$node_running" == true ]]
+    return $?
   fi
 }
 
@@ -257,11 +366,12 @@ monitor_node() {
   while true; do
     if ! check_node; then
       if [[ "$RESTART_DELAY" -gt 0 ]]; then
-        log_warn "Node is not running, restarting in $RESTART_DELAY seconds..."
+        log_warn "Node or CoVM is not running, restarting in $RESTART_DELAY seconds..."
         sleep "$RESTART_DELAY"
+        stop_node || true  # Ensure everything is stopped
         start_node
       else
-        log_info "Node is not running, automatic restart disabled"
+        log_info "Node or CoVM is not running, automatic restart disabled"
         break
       fi
     fi
