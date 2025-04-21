@@ -1,0 +1,32 @@
+# Environment
+.env
+
+# Dependencies
+deps/
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Node data directories
+.icn-node/
+.icn-testnet/
+
+# Docker
+docker/.env
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db 
+
+icn-dev-node_dump.txt
+
+# Uncomment to exclude CoVM version tracking (if not wanting to commit this with repo)
+# .covm-version

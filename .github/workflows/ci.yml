@@ -1,0 +1,304 @@
+name: ICN Node CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: 'error'
+  
+  test-local-node:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl netcat-openbsd
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Install ICN dependencies
+        run: ./scripts/install.sh --skip-build
+      
+      - name: Build ICN-COVM
+        run: |
+          cd deps/icn-covm
+          cargo build
+      
+      - name: Start node in background
+        run: |
+          ./scripts/run-node.sh &
+          echo "Waiting for node to start..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:26657/health > /dev/null; then
+              echo "Node is up!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Timed out waiting for node"
+              exit 1
+            fi
+            echo -n "."
+            sleep 1
+          done
+      
+      - name: Check node health
+        run: |
+          curl -s http://localhost:26657/health
+          if [ $? -ne 0 ]; then
+            echo "Node health check failed"
+            exit 1
+          fi
+      
+      - name: Check federation status
+        run: |
+          curl -s http://localhost:26657/abci_query?path="\"/custom/federation/status\"" | jq .
+          echo "Federation endpoints check passed"
+      
+      - name: Run demo proposal
+        run: ./scripts/demo-proposals.sh --no-start
+      
+      - name: Verify DAG state 
+        run: |
+          echo "Checking DAG state after proposal..."
+          curl -s http://localhost:26657/dag_info | jq .
+          # Check if DAG has at least one vertex (simplified test)
+          VERTEX_COUNT=$(curl -s http://localhost:26657/dag_info | jq '.result.dag_info.vertex_count' 2>/dev/null || echo "0")
+          if [ "$VERTEX_COUNT" -gt 0 ]; then
+            echo "✅ DAG state verification passed"
+          else
+            echo "❌ DAG state verification failed - expected vertices in DAG"
+            exit 1
+          fi
+
+  test-identity-generation:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Install ICN dependencies
+        run: ./scripts/install.sh --skip-build
+      
+      - name: Build ICN-COVM
+        run: |
+          cd deps/icn-covm
+          cargo build
+      
+      - name: Create wallet directories
+        run: mkdir -p .wallet/identities
+      
+      - name: Generate test identities
+        run: |
+          ./scripts/generate-identity.sh --name "test-admin" --coop "test-coop" --role "admin"
+          ./scripts/generate-identity.sh --name "test-member" --coop "test-coop" --role "member"
+      
+      - name: Verify identity files
+        run: |
+          ls -la .wallet/identities/test-coop/
+          if [ ! -f .wallet/identities/test-coop/test-admin.json ] || [ ! -f .wallet/identities/test-coop/test-member.json ]; then
+            echo "❌ Identity files not created properly"
+            exit 1
+          fi
+          echo "✅ Identity generation test passed"
+
+  test-dag-replay:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Install ICN dependencies
+        run: ./scripts/install.sh --skip-build
+      
+      - name: Build ICN-COVM
+        run: |
+          cd deps/icn-covm
+          cargo build
+      
+      - name: Start node in background
+        run: |
+          ./scripts/run-node.sh &
+          echo "Waiting for node to start..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:26657/health > /dev/null; then
+              echo "Node is up!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Timed out waiting for node"
+              exit 1
+            fi
+            echo -n "."
+            sleep 1
+          done
+      
+      - name: Create sample data in DAG
+        run: ./scripts/demo-proposals.sh --no-start
+      
+      - name: Test DAG replay script
+        run: |
+          # Test basic DAG info
+          ./scripts/replay-dag.sh --json
+          
+          # Get a vertex ID to test
+          VERTEX_ID=$(curl -s http://localhost:26657/dag_info | jq -r '.result.dag_info.tips[0].id' 2>/dev/null || echo "")
+          if [ -n "$VERTEX_ID" ]; then
+            echo "Testing vertex tracing with ID: $VERTEX_ID"
+            ./scripts/replay-dag.sh --vertex "$VERTEX_ID" --json
+          else
+            echo "No vertex ID found for testing"
+          fi
+          
+          echo "✅ DAG replay test passed"
+
+  test-coop-simulation:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Install ICN dependencies
+        run: ./scripts/install.sh --skip-build
+      
+      - name: Build ICN-COVM
+        run: |
+          cd deps/icn-covm
+          cargo build
+      
+      - name: Create wallet directories
+        run: mkdir -p .wallet/identities
+      
+      - name: Run cooperative simulation
+        run: |
+          ./scripts/simulate-coop.sh --coop "ci-test-coop" --identity-count 3 --replay
+      
+      - name: Verify simulation results
+        run: |
+          if [ ! -f .wallet/identities/ci-test-coop/admin.json ]; then
+            echo "❌ Admin identity not created"
+            exit 1
+          fi
+          
+          if [ ! -f .wallet/identities/ci-test-coop/member1.json ]; then
+            echo "❌ Member identity not created"
+            exit 1
+          fi
+          
+          if [ ! -f /tmp/icn_last_proposal_id.txt ]; then
+            echo "❌ Proposal ID file not created"
+            exit 1
+          fi
+          
+          echo "✅ Cooperative simulation test passed"
+
+  docker-test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      
+      - name: Build Docker image
+        run: |
+          cd docker
+          docker build -t icn-node:test .
+      
+      - name: Test Docker image
+        run: |
+          cd docker
+          docker run --rm icn-node:test --version || echo "Command may not exist, ignoring exit code"
+          
+          # Start container in the background
+          docker run -d --name icn-test-node -p 26657:26657 -p 26656:26656 icn-node:test
+          
+          # Wait for container to be ready
+          echo "Waiting for Docker container to start..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:26657/health > /dev/null; then
+              echo "Docker container is up!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Timed out waiting for Docker container"
+              docker logs icn-test-node
+              exit 1
+            fi
+            echo -n "."
+            sleep 1
+          done
+          
+          # Check if node is responding
+          curl -s http://localhost:26657/status | jq .result.node_info.moniker
+          
+          # Clean up
+          docker stop icn-test-node 

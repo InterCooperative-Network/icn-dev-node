@@ -1,0 +1,32 @@
+# Bootstrap Peers Configuration for ICN Testnet
+# ========================================================
+#
+# This file contains the list of bootstrap peers for connecting to the ICN testnet.
+# These peers serve as entry points to the network and help with initial discovery.
+
+[bootstrap]
+# List of peer node IDs and addresses
+# Format: "node_id@host:port"
+peers = [
+  "88401d3f743ce86a0a23c9d1954092ee5a446b1a@icn-testnet1.example.com:26656",
+  "fd11c3e38ab8b49eb8bc23049ee42aecae432a76@icn-testnet2.example.com:26656",
+  "3276d39b94cfb1b9d0c79274f1ca67d8b97a7f9c@icn-testnet3.example.com:26656"
+]
+
+# Connection settings
+[connection]
+# Maximum number of outbound connections to attempt
+max_outbound_attempts = 10
+# Initial connection timeout in seconds
+initial_timeout_sec = 30
+# Enable persistent connections
+persistent = true
+# Reconnect delay in seconds
+reconnect_delay_sec = 10
+
+# Federation settings
+[federation]
+# Minimum number of peers required for federation confirmation
+min_federation_peers = 2
+# Required federation version compatibility
+required_version = "0.1.0" 

@@ -1,0 +1,47 @@
+# This is a template configuration file for connecting to the ICN testnet
+# ======================================================================
+
+# Tendermint node configuration
+[proxy_app]
+laddr = "tcp://127.0.0.1:26658"
+
+[moniker]
+moniker = "my-testnet-node"
+
+[consensus]
+timeout_commit = "5s"
+skip_timeout_commit = false
+create_empty_blocks = true
+create_empty_blocks_interval = "0s"
+
+[tx_index]
+indexer = "kv"
+
+[instrumentation]
+prometheus = true
+prometheus_listen_addr = ":26660"
+
+[p2p]
+laddr = "tcp://0.0.0.0:26656"
+# Replace with actual testnet peer IDs and addresses
+persistent_peers = "node_id_1@testnet1.icn.xyz:26656,node_id_2@testnet2.icn.xyz:26656"
+addr_book_strict = true
+max_num_inbound_peers = 40
+max_num_outbound_peers = 10
+# Seed nodes can be added here if available
+# seeds = "seed_id_1@seed1.icn.xyz:26656,seed_id_2@seed2.icn.xyz:26656"
+
+[rpc]
+laddr = "tcp://0.0.0.0:26657"
+cors_allowed_origins = ["*"]
+
+# Application-specific configuration
+[federation]
+enabled = true
+
+[storage]
+enabled = true
+path = "data/storage"
+
+# Log levels: debug, info, warn, error
+log_level = "info" 

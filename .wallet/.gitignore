@@ -1,0 +1,15 @@
+# Exclude all identity files and key material
+identities/**/*.json
+identities/**/*.key
+identities/**/*.pem
+identities/**/*.seed
+
+# Exclude wallet database
+wallet.db
+*.dat
+*.backup
+
+# Allow placeholder directories
+!identities/
+!identities/*/
+!identities/*/.placeholder 

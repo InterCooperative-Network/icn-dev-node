@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  icn-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: icn-node:latest
+    container_name: icn-node
+    restart: unless-stopped
+    volumes:
+      - icn-data:/data
+    ports:
+      - "26656:26656" # P2P
+      - "26657:26657" # RPC
+      - "26660:26660" # Prometheus metrics (if enabled)
+    environment:
+      - NODE_NAME=docker-node
+      - FEDERATION_ENABLED=true
+      - STORAGE_ENABLED=true
+      - LOG_LEVEL=info
+      # Uncomment and update for testnet connection
+      # - BOOTSTRAP_PEERS=id1@node1.testnet.icn.xyz:26656,id2@node2.testnet.icn.xyz:26656
+    command: ["start", "--home", "/data"]
+
+volumes:
+  icn-data:
+    name: icn-node-data 
