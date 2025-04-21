@@ -3,6 +3,8 @@
 
 # Dependencies
 deps/
+# Ensure CoVM copy is excluded even if deps/ rule changes
+deps/icn-covm/
 
 # Rust
 target/
