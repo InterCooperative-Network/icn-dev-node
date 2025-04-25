@@ -2,7 +2,6 @@
 members = [
     "crates/icn-cli",
     "crates/icn-node",
-    "deps/icn-covm/crates/icn-covm",
 ]
 resolver = "2"
 
